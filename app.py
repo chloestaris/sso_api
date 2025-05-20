@@ -1,22 +1,29 @@
 # app.py
 from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
 from functools import wraps
 import os
 import sys
+from flask_swagger_ui import get_swaggerui_blueprint
+import json
 
-# Create and configure the app
+# Initialize Flask app
 app = Flask(__name__, instance_relative_config=True)
-app.config['SECRET_KEY'] =  'qucgon-xosbi5-paqhoz'
+app.config['SECRET_KEY'] = 'your_secret_key'  # Change this in production
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Create instance directory if it doesn't exist
 os.makedirs(app.instance_path, exist_ok=True)
 
-# Import models and initialize database
+# Create static directory if it doesn't exist
+static_dir = os.path.join(app.root_path, 'static')
+os.makedirs(static_dir, exist_ok=True)
+
+# Initialize SQLAlchemy
 from models import db, User
 db.init_app(app)
 
@@ -203,9 +210,321 @@ def test_verification(username):
     
     return jsonify({'message': 'Test verification email printed to console'}), 200
 
+# Create a simple swagger.json file instead of generating it dynamically
+swagger_data = {
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Flask Authentication API",
+    "description": "API for user authentication with email verification",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Development server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Authentication",
+      "description": "Authentication operations"
+    },
+    {
+      "name": "User",
+      "description": "User operations"
+    },
+    {
+      "name": "Email Verification",
+      "description": "Email verification operations"
+    }
+  ],
+  "paths": {
+    "/register": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Register a new user",
+        "requestBody": {
+          "required": True,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "example": "testuser"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "example": "user@example.com"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "example": "password123"
+                  }
+                },
+                "required": ["username", "email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created successfully"
+          },
+          "400": {
+            "description": "Bad request - missing fields or user already exists"
+          }
+        }
+      }
+    },
+    "/login": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Login to get an access token",
+        "requestBody": {
+          "required": True,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "example": "testuser"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "example": "password123"
+                  }
+                },
+                "required": ["username", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Login successful"
+                    },
+                    "token": {
+                      "type": "string",
+                      "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    },
+                    "expires_in": {
+                      "type": "integer",
+                      "example": 86400
+                    },
+                    "email_verified": {
+                      "type": "boolean",
+                      "example": True
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials"
+          }
+        }
+      }
+    },
+    "/verify-email/{token}": {
+      "get": {
+        "tags": ["Email Verification"],
+        "summary": "Verify email address",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": True,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Email verification token"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Email verified successfully"
+          },
+          "400": {
+            "description": "Invalid or expired token"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    },
+    "/resend-verification": {
+      "post": {
+        "tags": ["Email Verification"],
+        "summary": "Resend verification email",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verification email sent"
+          },
+          "400": {
+            "description": "Email already verified"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/user": {
+      "get": {
+        "tags": ["User"],
+        "summary": "Get current user profile",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "example": 1
+                    },
+                    "username": {
+                      "type": "string",
+                      "example": "testuser"
+                    },
+                    "email": {
+                      "type": "string",
+                      "format": "email",
+                      "example": "user@example.com"
+                    },
+                    "email_verified": {
+                      "type": "boolean",
+                      "example": True
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "example": "2023-05-20T12:34:56.789012"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/protected-verified": {
+      "get": {
+        "tags": ["User"],
+        "summary": "Access protected resource (requires verified email)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Access granted"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Email verification required"
+          }
+        }
+      }
+    },
+    "/test-verification/{username}": {
+      "get": {
+        "tags": ["Testing"],
+        "summary": "Generate test verification email for a user",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": True,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Username of the user"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Test verification email sent"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    }
+  }
+}
+
+# Save the swagger.json file
+with open(os.path.join(static_dir, 'swagger.json'), 'w') as f:
+    json.dump(swagger_data, f)
+
+# Serve the static swagger.json file
+@app.route('/static/swagger.json')
+def serve_swagger():
+    return jsonify(swagger_data)
+
 # Create tables before first request
 with app.app_context():
     db.create_all()
+
+# Register Swagger UI Blueprint
+SWAGGER_URL = '/api/docs'  # URL for exposing Swagger UI
+API_URL = '/static/swagger.json'  # URL to access OpenAPI spec
+
+swaggerui_blueprint = get_swaggerui_blueprint(
+    SWAGGER_URL,
+    API_URL,
+    config={
+        'app_name': "Flask Authentication API"
+    }
+)
+app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
 
 if __name__ == '__main__':
     sys.stdout.write("\n=== Starting Flask Authentication API with Email Verification ===\n")
