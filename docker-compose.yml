@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  sso_api:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=development  # Change to production in prod environment
+      - FLASK_DEBUG=1
+      - SECRET_KEY=your-secret-key-change-in-production
+      - OAUTH2_JWT_ISS=http://localhost:5000  # JWT issuer URL
+      - OAUTH2_JWT_KEY_PATH=/app/instance/keys  # Path to JWT keys
+      - OAUTH2_JWT_ALG=RS256  # JWT signing algorithm
+      - AUTHLIB_INSECURE_TRANSPORT=1  # Allow HTTP in development
+    volumes:
+      - type: bind
+        source: ./instance
+        target: /app/instance
+      - type: bind
+        source: ./static
+        target: /app/static
+      - type: bind
+        source: .
+        target: /app
+        read_only: true
+    user: "nobody:nogroup"
+    healthcheck:
+      test: curl -sf http://localhost:5000/health
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped

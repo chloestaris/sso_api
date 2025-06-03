@@ -4,6 +4,11 @@ FROM python:3.11-slim
 # Set working directory in container
 WORKDIR /app
 
+# Install system dependencies including curl for health checks
+RUN apt-get update && \
+    apt-get install -y curl && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 
@@ -13,21 +18,22 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
-# Create instance directory if it doesn't exist
-RUN mkdir -p instance
+# Create instance directory with proper permissions
+RUN mkdir -p instance && \
+    chmod 700 instance && \
+    chown -R nobody:nogroup instance
+
+# Set environment variables
+ENV FLASK_APP=app.py \
+    FLASK_ENV=development \
+    FLASK_DEBUG=1 \
+    SECRET_KEY=your-secret-key-change-in-production
+
+# Switch to non-root user
+USER nobody
 
 # Expose port 5000
 EXPOSE 5000
 
-# Set environment variables
-ENV FLASK_APP=app.py
-# Default to production, but allow override
-ENV FLASK_ENV=${FLASK_ENV:-production}
-ENV FLASK_DEBUG=${FLASK_DEBUG:-0}
-
-# Run the application with hot reload in development
-CMD if [ "$FLASK_ENV" = "development" ]; then \
-        flask run --host=0.0.0.0 --reload --debugger; \
-    else \
-        flask run --host=0.0.0.0; \
-    fi 
+# Run the application
+CMD ["flask", "run", "--host=0.0.0.0"] 

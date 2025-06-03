@@ -8,13 +8,18 @@ def setup_email_verification(app):
     
     def generate_verification_token(user_id, email):
         """Generate token for email verification"""
+        # Check if algorithm is configured
+        if not app.config.get('JWT_ALGORITHM'):
+            raise ValueError('JWT algorithm not configured')
+            
         payload = {
             'user_id': user_id,
             'email': email,
             'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24),
-            'iat': datetime.datetime.utcnow()
+            'iat': datetime.datetime.utcnow(),
+            'kid': app.key_manager.kid  # Add key ID for key rotation support
         }
-        return jwt.encode(payload, app.config['SECRET_KEY'], algorithm="HS256")
+        return jwt.encode(payload, app.config['JWT_PRIVATE_KEY'], algorithm=app.config['JWT_ALGORITHM'])
     
     def send_verification_email(user, verification_token):
         """Mock sending a verification email"""
