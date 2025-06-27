@@ -131,77 +131,53 @@ def config_oauth(app):
 
         def authenticate_token(self, token_string):
             with app.app_context():  # Add app context
-                app.logger.debug(f"Authenticating token: {token_string}")
                 token = OAuth2Token.query.filter_by(access_token=token_string).first()
                 if token:
-                    app.logger.debug(f"Token found in database. User ID: {token.user_id}")
-                    app.logger.debug(f"Token scopes: {token.scope}")
-                    app.logger.debug(f"Token issued at: {token.issued_at}, expires in: {token.expires_in}")
                     if not token.is_expired() and not token.is_revoked():
                         return token
-                    else:
-                        app.logger.debug(f"Token validation failed - Expired: {token.is_expired()}, Revoked: {token.is_revoked()}")
-                else:
-                    app.logger.debug("Token not found in database")
             return None
 
         def request_invalid(self, request):
-            app.logger.debug("Checking if request is invalid")
             return False
 
         def token_revoked(self, token):
             revoked = token.revoked if token else True
-            app.logger.debug(f"Checking if token is revoked: {revoked}")
             return revoked
         
         def validate_request(self, request):
             """Validate the request object."""
             auth = request.headers.get('Authorization')
-            app.logger.debug(f"Authorization header: {auth}")
             if not auth:
-                app.logger.debug("No Authorization header found")
                 return False
             try:
                 auth_type, token = auth.split(None, 1)
-                app.logger.debug(f"Auth type: {auth_type}, Token: {token[:10]}...")
                 if auth_type.lower() != 'bearer':
-                    app.logger.debug("Not a bearer token")
                     return False
                 token_obj = self.authenticate_token(token)
                 if token_obj:
-                    app.logger.debug("Token validated successfully")
                     request.oauth_token = token_obj  # Direct assignment instead of setattr
                     return True
-                app.logger.debug("Token validation failed")
                 return False
             except ValueError:
-                app.logger.debug("Invalid Authorization header format")
                 return False
         
         def validate_token(self, token, scopes, request):
             """Validate the token."""
-            app.logger.debug(f"Validating token with scopes: {scopes}")
             if not token:
-                app.logger.debug("No token provided")
                 return False
             if token.revoked:
-                app.logger.debug("Token is revoked")
                 return False
             if not token.is_valid():
-                app.logger.debug("Token is not valid")
                 return False
             
             # Check scopes
             if scopes:
                 token_scopes = set(token.get_scope().split())
-                app.logger.debug(f"Token scopes: {token_scopes}")
                 for scope in scopes:
                     if scope not in token_scopes:
-                        app.logger.debug(f"Missing required scope: {scope}")
                         return False
             
             # Set token on request object
-            app.logger.debug("Token validation successful")
             request.oauth_token = token  # Use the token parameter
             return True
 

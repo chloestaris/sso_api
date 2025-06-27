@@ -56,10 +56,6 @@ def token_required(f):
             return jsonify({'message': 'Token is missing'}), 401
         
         try:
-            # Add logging
-            sys.stdout.write(f"\nDecoding token: {token[:10]}...\n")
-            sys.stdout.flush()
-            
             # Check if algorithm is configured
             if not app.config.get('JWT_ALGORITHM'):
                 return jsonify({'message': 'JWT algorithm not configured'}), 500
@@ -67,26 +63,16 @@ def token_required(f):
             # Decode using RSA public key with correct algorithm
             data = jwt.decode(token, app.config['JWT_PUBLIC_KEY'], algorithms=["RS256","HS256"])
             
-            # Add logging
-            sys.stdout.write(f"Token decoded successfully. User ID: {data.get('user_id')}\n")
-            sys.stdout.flush()
-            
             current_user = User.query.filter_by(id=data['user_id']).first()
             if not current_user:
                 return jsonify({'message': 'User not found'}), 401
                 
-            # Add logging
-            sys.stdout.write(f"User found: {current_user.username}\n")
-            sys.stdout.flush()
-            
             return f(current_user, *args, **kwargs)
         except jwt.ExpiredSignatureError:
             return jsonify({'message': 'Token has expired'}), 401
         except jwt.InvalidTokenError as e:
             return jsonify({'message': f'Invalid token: {str(e)}'}), 401
         except Exception as e:
-            sys.stdout.write(f"Unexpected error in token validation: {str(e)}\n")
-            sys.stdout.flush()
             return jsonify({'message': f'Error validating token: {str(e)}'}), 401
             
     return decorated
@@ -133,17 +119,10 @@ def register():
     
     # Generate and send verification email
     try:
-        sys.stdout.write("\nSending verification email...\n")
-        sys.stdout.flush()
-        
         verification_token = generate_verification_token(new_user.id, new_user.email)
         send_verification_email(new_user, verification_token)
-        
-        sys.stdout.write(f"Verification email sent to {new_user.email}\n")
-        sys.stdout.flush()
     except Exception as e:
-        sys.stdout.write(f"Error sending verification email: {str(e)}\n")
-        sys.stdout.flush()
+        return jsonify({'message': 'User created but failed to send verification email'}), 201
     
     return jsonify({'message': 'User created successfully. Please check your console for verification link.'}), 201
 
@@ -206,8 +185,6 @@ def verify_email(token):
         
         return jsonify({'message': 'Email verified successfully'}), 200
     except Exception as e:
-        sys.stdout.write(f"Verification error: {str(e)}\n")
-        sys.stdout.flush()
         return jsonify({'message': 'Invalid or expired verification link'}), 400
 
 @app.route('/resend-verification', methods=['POST'])
@@ -248,9 +225,6 @@ def test_verification(username):
     if not user:
         return jsonify({'message': 'User not found'}), 404
     
-    sys.stdout.write(f"\nGenerating test verification email for {user.username}\n")
-    sys.stdout.flush()
-    
     verification_token = generate_verification_token(user.id, user.email)
     send_verification_email(user, verification_token)
     
@@ -270,10 +244,6 @@ def authorize():
         return jsonify({'message': 'Token is missing'}), 401
     
     try:
-        # Add logging
-        sys.stdout.write(f"\nAuthorize endpoint - Decoding token: {token[:10]}...\n")
-        sys.stdout.flush()
-        
         # Check if algorithm is configured
         if not app.config.get('JWT_ALGORITHM'):
             return jsonify({'message': 'JWT algorithm not configured'}), 500
@@ -281,24 +251,22 @@ def authorize():
         # Use RSA public key for verification
         data = jwt.decode(token, app.config['JWT_PUBLIC_KEY'], algorithms=["RS256","HS256"])
         
-        # Add logging
-        sys.stdout.write(f"Token decoded successfully. User ID: {data.get('user_id')}\n")
-        sys.stdout.flush()
-        
         current_user = User.query.filter_by(id=data['user_id']).first()
         if not current_user:
             return jsonify({'message': 'User not found'}), 401
             
-        # Add logging
-        sys.stdout.write(f"User found: {current_user.username}\n")
-        sys.stdout.flush()
+        return jsonify({
+            'message': 'Token validated successfully',
+            'user_id': current_user.id,
+            'username': current_user.username,
+            'email': current_user.email,
+            'email_verified': current_user.email_verified
+        }), 200
     except jwt.ExpiredSignatureError:
         return jsonify({'message': 'Token has expired'}), 401
     except jwt.InvalidTokenError as e:
         return jsonify({'message': f'Invalid token: {str(e)}'}), 401
     except Exception as e:
-        sys.stdout.write(f"Unexpected error in authorize endpoint: {str(e)}\n")
-        sys.stdout.flush()
         return jsonify({'message': f'Error validating token: {str(e)}'}), 401
 
     if request.method == 'GET':
@@ -334,22 +302,14 @@ def jwks():
 @require_oauth('profile')
 def userinfo():
     try:
-        # Add debug logging
-        app.logger.debug("=== Userinfo Endpoint ===")
-        app.logger.debug(f"Headers: {dict(request.headers)}")
-        
         token = getattr(request, 'oauth_token', None)
-        app.logger.debug(f"Token from request: {token}")
         
         if not token:
-            app.logger.debug("No oauth_token found on request object")
             return jsonify({'error': 'No token found'}), 401
             
         user = token.user
-        app.logger.debug(f"User from token: {user}")
         
         if not user:
-            app.logger.debug("No user associated with token")
             return jsonify({'error': 'No user associated with token'}), 401
             
         response_data = {
@@ -358,7 +318,6 @@ def userinfo():
             'email': user.email,
             'email_verified': user.email_verified
         }
-        app.logger.debug(f"Returning user info: {response_data}")
         return jsonify(response_data)
     except Exception as e:
         app.logger.error(f"Error in userinfo endpoint: {str(e)}")
@@ -840,6 +799,4 @@ def health_check():
         }), 500
 
 if __name__ == '__main__':
-    sys.stdout.write("\n=== Starting Flask Authentication API with Email Verification ===\n")
-    sys.stdout.flush()
-    app.run(debug=True)
+    app.run(host='0.0.0.0')
